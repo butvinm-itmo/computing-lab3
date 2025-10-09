@@ -90,11 +90,25 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  // uint32_t HAL_GetTick();
+  
+  GPIO_PinState enabled = GPIO_PIN_RESET;
   while (1)
   {
+    if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_15) == GPIO_PIN_RESET) {
+      enabled = enabled == GPIO_PIN_SET ? GPIO_PIN_RESET : GPIO_PIN_SET;
+      // wait for button release
+      while (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_15) == GPIO_PIN_RESET) {
+        HAL_Delay(10);
+      }
+    }
 
-	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_15));
-
+    if (enabled == GPIO_PIN_SET) {
+      HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
+    } else {
+      HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+    }
+    HAL_Delay(300);
 
 //	  HAL_Delay( 150 );
 //	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_RESET);
