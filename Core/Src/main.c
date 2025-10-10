@@ -26,11 +26,22 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+typedef enum {
+    RED,
+    GREEN,
+    GREEN_BLINKING,
+    YELLOW
+} Colors;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define DEFAULT_DURATION 4000
+#define RED_DURATION (4*DEFAULT_DURATION)
+#define GREEN_DURATION DEFAULT_DURATION
+#define GREEN_BLINKING_DURATION DEFAULT_DURATION
+#define GREEN_BLINKING_TOGGLE_DURATION (GREEN_BLINKING_DURATION / 10)
+#define YELLOW_DURATION DEFAULT_DURATION
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -92,25 +103,95 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   // uint32_t HAL_GetTick();
   
-  GPIO_PinState enabled = GPIO_PIN_RESET;
+  Button btn = {
+      .GPIOx = GPIOC,
+      .GPIO_Pin = GPIO_PIN_15,
+      .last_pressed_time = 0
+  };
+  LED red_led = {
+      .GPIOx = GPIOD,
+      .GPIO_Pin = GPIO_PIN_15
+  };
+  LED green_led = {
+      .GPIOx = GPIOD,
+      .GPIO_Pin = GPIO_PIN_13
+  };
+  LED yellow_led = {
+      .GPIOx = GPIOD,
+      .GPIO_Pin = GPIO_PIN_14
+  };
+
+  Colors current_color = RED;
+  uint32_t current_red_duration = RED_DURATION;
+  uint32_t color_activated_time = HAL_GetTick();
+  uint32_t last_green_blinking_toggle_time = 0;
+
+  led_activate(&red_led);
+
   while (1)
   {
-    if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_15) == GPIO_PIN_RESET) {
-      enabled = enabled == GPIO_PIN_SET ? GPIO_PIN_RESET : GPIO_PIN_SET;
-      // wait for button release
-      while (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_15) == GPIO_PIN_RESET) {
-        HAL_Delay(10);
+    uint32_t current_time = HAL_GetTick();
+
+    if (button_is_clicked(&btn)) {
+      if (current_color == RED && current_red_duration < RED_DURATION) {
+        current_color = GREEN;
+        color_activated_time = current_time;
+        led_deactivate(&red_led);
+        led_activate(&green_led);
+      } else if (current_color != GREEN) {
+        current_red_duration = RED_DURATION / 4;
       }
     }
 
-    if (enabled == GPIO_PIN_SET) {
-      HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
-    } else {
-      HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-    }
-    HAL_Delay(300);
+    switch (current_color)
+    {
+    case RED:
+      if (current_time - color_activated_time >= current_red_duration) {
+        current_color = GREEN;
+        color_activated_time = current_time;
+        current_red_duration = RED_DURATION;
+        led_deactivate(&red_led);
+        led_activate(&green_led);
+      }
+      break;
+    case GREEN:
+      if (current_time - color_activated_time >= GREEN_DURATION) {
+        current_color = GREEN_BLINKING;
+        color_activated_time = current_time;
+        last_green_blinking_toggle_time = current_time;
+        led_deactivate(&green_led);
+      }
+      break;
+    case GREEN_BLINKING:
+      // if (current_time - color_activated_time >= GREEN_BLINKING_DURATION) { 
+      //   current_color = YELLOW;
+      //   color_activated_time = current_time;
+      //   led_deactivate(&green_led);
+      //   led_activate(&yellow_led);
+      // } else {
+      //   led_toggle(&green_led);
+      // }
+      if (current_time - color_activated_time >= GREEN_BLINKING_DURATION) { 
+        current_color = YELLOW;
+        color_activated_time = current_time;
+        led_deactivate(&green_led);
+        led_activate(&yellow_led);
+      } else if (current_time - last_green_blinking_toggle_time >= GREEN_BLINKING_TOGGLE_DURATION) {
+        last_green_blinking_toggle_time = current_time;
+        led_toggle(&green_led);
+      }
 
-//	  HAL_Delay( 150 );
+      break;
+    case YELLOW:  
+      if (current_time - color_activated_time >= YELLOW_DURATION) {
+        current_color = RED;
+        color_activated_time = current_time;
+        led_deactivate(&yellow_led);
+        led_activate(&red_led);
+      }
+      break; 
+    }
+  }
 //	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_RESET);
 //	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
 //	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
@@ -138,7 +219,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-  }
+  // }
   /* USER CODE END 3 */
 }
 
