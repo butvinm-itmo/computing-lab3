@@ -36,10 +36,12 @@ typedef enum {
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define RED_DURATION 1000
-#define GREEN_DURATION 250
-#define GREEN_BLINKING_DURATION 250
-#define YELLOW_DURATION 250
+#define DEFAULT_DURATION 4000
+#define RED_DURATION (4*DEFAULT_DURATION)
+#define GREEN_DURATION DEFAULT_DURATION
+#define GREEN_BLINKING_DURATION DEFAULT_DURATION
+#define GREEN_BLINKING_TOGGLE_DURATION (GREEN_BLINKING_DURATION / 10)
+#define YELLOW_DURATION DEFAULT_DURATION
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -108,7 +110,7 @@ int main(void)
   };
   LED red_led = {
       .GPIOx = GPIOD,
-      .GPIO_Pin = GPIO_PIN_14
+      .GPIO_Pin = GPIO_PIN_15
   };
   LED green_led = {
       .GPIOx = GPIOD,
@@ -116,12 +118,13 @@ int main(void)
   };
   LED yellow_led = {
       .GPIOx = GPIOD,
-      .GPIO_Pin = GPIO_PIN_15
+      .GPIO_Pin = GPIO_PIN_14
   };
 
   Colors current_color = RED;
   uint32_t current_red_duration = RED_DURATION;
   uint32_t color_activated_time = HAL_GetTick();
+  uint32_t last_green_blinking_toggle_time = 0;
 
   led_activate(&red_led);
 
@@ -146,6 +149,7 @@ int main(void)
       if (current_time - color_activated_time >= current_red_duration) {
         current_color = GREEN;
         color_activated_time = current_time;
+        current_red_duration = RED_DURATION;
         led_deactivate(&red_led);
         led_activate(&green_led);
       }
@@ -154,23 +158,33 @@ int main(void)
       if (current_time - color_activated_time >= GREEN_DURATION) {
         current_color = GREEN_BLINKING;
         color_activated_time = current_time;
+        last_green_blinking_toggle_time = current_time;
         led_deactivate(&green_led);
       }
       break;
     case GREEN_BLINKING:
+      // if (current_time - color_activated_time >= GREEN_BLINKING_DURATION) { 
+      //   current_color = YELLOW;
+      //   color_activated_time = current_time;
+      //   led_deactivate(&green_led);
+      //   led_activate(&yellow_led);
+      // } else {
+      //   led_toggle(&green_led);
+      // }
       if (current_time - color_activated_time >= GREEN_BLINKING_DURATION) { 
         current_color = YELLOW;
         color_activated_time = current_time;
         led_deactivate(&green_led);
         led_activate(&yellow_led);
-      } else {
+      } else if (current_time - last_green_blinking_toggle_time >= GREEN_BLINKING_TOGGLE_DURATION) {
+        last_green_blinking_toggle_time = current_time;
         led_toggle(&green_led);
       }
+
       break;
     case YELLOW:  
       if (current_time - color_activated_time >= YELLOW_DURATION) {
         current_color = RED;
-        current_red_duration = RED_DURATION;
         color_activated_time = current_time;
         led_deactivate(&yellow_led);
         led_activate(&red_led);
