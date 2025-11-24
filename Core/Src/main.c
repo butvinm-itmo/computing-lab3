@@ -18,6 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "usart.h"
+#include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -57,13 +59,51 @@ typedef enum {
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+int uart6_receive_finished;
+int uart6_transmit_ongoing;
+
+static uint8_t uart6_buf;
+
+HAL_StatusTypeDef uart6_start_receive_char_it() {
+	uart6_receive_finished = 0;
+	return HAL_UART_Receive_IT(&huart6, &uart6_buf, 1);
+}
+
+int uiart6_try_get_received_char(uint8_t *buf) {
+	if (uart6_receive_finished) {
+		*buf = uart6_buf;
+		return 1;
+	}
+	return 0;
+}
+
+
+HAL_StatusTypeDef uart6_transmit_it(uint8_t *buf, int len) {
+	while (uart6_transmit_ongoing);
+
+	uart6_transmit_ongoing = 1;
+	return HAL_UART_Transmit_IT(&huart6, buf, len);
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+	if (huart->Instance == USART6) {
+		uart6_receive_finished = 1;
+	}
+}
+
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
+	if (huart->Instance == USART6) {
+		uart6_transmit_ongoing = 0;
+	}
+}
+
 
 /* USER CODE END 0 */
 
@@ -95,6 +135,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -128,93 +169,93 @@ int main(void)
 
   led_activate(&red_led);
 
+  char s[] = "Hello, world!\n";
+  char c;
+
+  uart6_start_receive_char_it();
+
   while (1)
   {
-    uint32_t current_time = HAL_GetTick();
 
-    if (button_is_clicked(&btn)) {
-      if (current_color == RED && current_red_duration < RED_DURATION) {
-        current_color = GREEN;
-        color_activated_time = current_time;
-        led_deactivate(&red_led);
-        led_activate(&green_led);
-      } else if (current_color != GREEN) {
-        current_red_duration = RED_DURATION / 4;
-      }
-    }
+	  if (uiart6_try_get_received_char((uint8_t *)&c)) {
+		  uart6_start_receive_char_it();
 
-    switch (current_color)
-    {
-    case RED:
-      if (current_time - color_activated_time >= current_red_duration) {
-        current_color = GREEN;
-        color_activated_time = current_time;
-        current_red_duration = RED_DURATION;
-        led_deactivate(&red_led);
-        led_activate(&green_led);
-      }
-      break;
-    case GREEN:
-      if (current_time - color_activated_time >= GREEN_DURATION) {
-        current_color = GREEN_BLINKING;
-        color_activated_time = current_time;
-        last_green_blinking_toggle_time = current_time;
-        led_deactivate(&green_led);
-      }
-      break;
-    case GREEN_BLINKING:
-      // if (current_time - color_activated_time >= GREEN_BLINKING_DURATION) { 
-      //   current_color = YELLOW;
-      //   color_activated_time = current_time;
-      //   led_deactivate(&green_led);
-      //   led_activate(&yellow_led);
-      // } else {
-      //   led_toggle(&green_led);
-      // }
-      if (current_time - color_activated_time >= GREEN_BLINKING_DURATION) { 
-        current_color = YELLOW;
-        color_activated_time = current_time;
-        led_deactivate(&green_led);
-        led_activate(&yellow_led);
-      } else if (current_time - last_green_blinking_toggle_time >= GREEN_BLINKING_TOGGLE_DURATION) {
-        last_green_blinking_toggle_time = current_time;
-        led_toggle(&green_led);
-      }
+		  switch (c) {
+		  case '!':
+			  uart6_transmit_it((uint8_t *)s, sizeof(s));
+			  break;
+		  default:
+		  	 uart6_transmit_it((uint8_t *)&c, 1);
+			 break;
+		  }
+	  }
 
-      break;
-    case YELLOW:  
-      if (current_time - color_activated_time >= YELLOW_DURATION) {
-        current_color = RED;
-        color_activated_time = current_time;
-        led_deactivate(&yellow_led);
-        led_activate(&red_led);
-      }
-      break; 
-    }
+	  // blocking
+	  // HAL_UART_Transmit(&huart6, (uint8_t*)s, sizeof(s), uart_timeout);
+      // HAL_Delay(1000);
+
+//    uint32_t current_time = HAL_GetTick();
+//
+//    if (button_is_clicked(&btn)) {
+//      if (current_color == RED && current_red_duration < RED_DURATION) {
+//        current_color = GREEN;
+//        color_activated_time = current_time;
+//        led_deactivate(&red_led);
+//        led_activate(&green_led);
+//      } else if (current_color != GREEN) {
+//        current_red_duration = RED_DURATION / 4;
+//      }
+//    }
+//
+//    switch (current_color)
+//    {
+//    case RED:
+//      if (current_time - color_activated_time >= current_red_duration) {
+//        current_color = GREEN;
+//        color_activated_time = current_time;
+//        current_red_duration = RED_DURATION;
+//        led_deactivate(&red_led);
+//        led_activate(&green_led);
+//      }
+//      break;
+//    case GREEN:
+//      if (current_time - color_activated_time >= GREEN_DURATION) {
+//        current_color = GREEN_BLINKING;
+//        color_activated_time = current_time;
+//        last_green_blinking_toggle_time = current_time;
+//        led_deactivate(&green_led);
+//      }
+//      break;
+//    case GREEN_BLINKING:
+//      // if (current_time - color_activated_time >= GREEN_BLINKING_DURATION) {
+//      //   current_color = YELLOW;
+//      //   color_activated_time = current_time;
+//      //   led_deactivate(&green_led);
+//      //   led_activate(&yellow_led);
+//      // } else {
+//      //   led_toggle(&green_led);
+//      // }
+//      if (current_time - color_activated_time >= GREEN_BLINKING_DURATION) {
+//        current_color = YELLOW;
+//        color_activated_time = current_time;
+//        led_deactivate(&green_led);
+//        led_activate(&yellow_led);
+//      } else if (current_time - last_green_blinking_toggle_time >= GREEN_BLINKING_TOGGLE_DURATION) {
+//        last_green_blinking_toggle_time = current_time;
+//        led_toggle(&green_led);
+//      }
+//
+//      break;
+//    case YELLOW:
+//      if (current_time - color_activated_time >= YELLOW_DURATION) {
+//        current_color = RED;
+//        color_activated_time = current_time;
+//        led_deactivate(&yellow_led);
+//        led_activate(&red_led);
+//      }
+//      break;
+//    }
   }
-//	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_RESET);
-//	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
-//	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-//
-//	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_RESET);
-//	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
-//	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-//
-//	  HAL_Delay( 150 );
-//	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET);
-//	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
-//	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-//
-//	  HAL_Delay( 150 );
-//	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_RESET);
-//	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
-//	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-//
-//	  HAL_Delay( 150 );
-//	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_RESET);
-//	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
-//	  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
-
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -262,39 +303,6 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-}
-
-/**
-  * @brief GPIO Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_GPIO_Init(void)
-{
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-
-  /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin : PC15 */
-  GPIO_InitStruct.Pin = GPIO_PIN_15;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PD13 PD14 PD15 */
-  GPIO_InitStruct.Pin = GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
 }
 
 /* USER CODE BEGIN 4 */
