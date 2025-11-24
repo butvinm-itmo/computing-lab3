@@ -31,7 +31,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "drivers.h"
+#include "gpio_driver.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/

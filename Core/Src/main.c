@@ -23,7 +23,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "gpio_driver.h"
+#include "uart_driver.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -54,7 +55,7 @@ typedef enum {
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+static UART uart6;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -65,45 +66,18 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-int uart6_receive_finished;
-int uart6_transmit_ongoing;
-
-static uint8_t uart6_buf;
-
-HAL_StatusTypeDef uart6_start_receive_char_it() {
-	uart6_receive_finished = 0;
-	return HAL_UART_Receive_IT(&huart6, &uart6_buf, 1);
-}
-
-int uiart6_try_get_received_char(uint8_t *buf) {
-	if (uart6_receive_finished) {
-		*buf = uart6_buf;
-		return 1;
-	}
-	return 0;
-}
-
-
-HAL_StatusTypeDef uart6_transmit_it(uint8_t *buf, int len) {
-	while (uart6_transmit_ongoing);
-
-	uart6_transmit_ongoing = 1;
-	return HAL_UART_Transmit_IT(&huart6, buf, len);
-}
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	if (huart->Instance == USART6) {
-		uart6_receive_finished = 1;
+		uart_rx_complete_callback(&uart6);
 	}
 }
-
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
 	if (huart->Instance == USART6) {
-		uart6_transmit_ongoing = 0;
+		uart_tx_complete_callback(&uart6);
 	}
 }
-
 
 /* USER CODE END 0 */
 
@@ -137,7 +111,7 @@ int main(void)
   MX_GPIO_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  uart_init(&uart6, &huart6);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -169,26 +143,51 @@ int main(void)
 
   led_activate(&red_led);
 
-  char s[] = "Hello, world!\n";
-  char c;
+  char hello_msg[] = "Hello, world!\r\n";
+  char irq_on_msg[] = "[IRQ mode ON]\r\n";
+  char irq_off_msg[] = "[Polling mode ON]\r\n";
+  uint8_t c;
 
-  uart6_start_receive_char_it();
+  /* Start in IRQ mode */
+  uart_set_irq_mode(&uart6, true);
+  uart_it_send_string(&uart6, irq_on_msg);
 
   while (1)
   {
+      /* Button toggles between IRQ and Polling mode */
+      if (button_is_clicked(&btn)) {
+          if (uart_is_irq_mode(&uart6)) {
+              uart_set_irq_mode(&uart6, false);
+              uart_poll_send_string(&uart6, irq_off_msg);
+          } else {
+              uart_set_irq_mode(&uart6, true);
+              uart_it_send_string(&uart6, irq_on_msg);
+          }
+      }
 
-	  if (uiart6_try_get_received_char((uint8_t *)&c)) {
-		  uart6_start_receive_char_it();
-
-		  switch (c) {
-		  case '!':
-			  uart6_transmit_it((uint8_t *)s, sizeof(s));
-			  break;
-		  default:
-		  	 uart6_transmit_it((uint8_t *)&c, 1);
-			 break;
-		  }
-	  }
+      if (uart_is_irq_mode(&uart6)) {
+          if (uart_it_try_get_byte(&uart6, &c)) {
+              switch (c) {
+              case '!':
+                  uart_it_send_string(&uart6, hello_msg);
+                  break;
+              default:
+                  uart_it_send_byte(&uart6, c);
+                  break;
+              }
+          }
+      } else {
+          if (uart_poll_try_get_byte(&uart6, &c)) {
+              switch (c) {
+              case '!':
+                  uart_poll_send_string(&uart6, hello_msg);
+                  break;
+              default:
+                  uart_poll_send_byte(&uart6, c);
+                  break;
+              }
+          }
+      }
 
 	  // blocking
 	  // HAL_UART_Transmit(&huart6, (uint8_t*)s, sizeof(s), uart_timeout);
