@@ -30,21 +30,21 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 typedef enum {
-    RED,
-    GREEN,
-    GREEN_BLINKING,
-    YELLOW
-} Colors;
+    STATE_RED,
+    STATE_GREEN,
+    STATE_GREEN_BLINKING,
+    STATE_YELLOW
+} TrafficState;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define DEFAULT_DURATION 4000
-#define RED_DURATION (4*DEFAULT_DURATION)
-#define GREEN_DURATION DEFAULT_DURATION
-#define GREEN_BLINKING_DURATION DEFAULT_DURATION
-#define GREEN_BLINKING_TOGGLE_DURATION (GREEN_BLINKING_DURATION / 10)
-#define YELLOW_DURATION DEFAULT_DURATION
+#define DEFAULT_TIMEOUT_SEC 4
+#define GREEN_DURATION_MS 4000
+#define GREEN_BLINK_DURATION_MS 4000
+#define GREEN_BLINK_TOGGLE_MS 400
+#define YELLOW_DURATION_MS 4000
+#define CMD_BUF_SIZE 64
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -56,6 +56,21 @@ typedef enum {
 
 /* USER CODE BEGIN PV */
 static UART uart6;
+
+/* Traffic light state */
+static TrafficState traffic_state = STATE_RED;
+static uint32_t state_start_time = 0;
+static uint32_t last_blink_time = 0;
+static uint32_t red_timeout_ms = DEFAULT_TIMEOUT_SEC * 1000;
+static uint8_t button_mode = 1;  /* 1 = button enabled, 2 = button ignored */
+
+/* Command buffer */
+static char cmd_buf[CMD_BUF_SIZE];
+static uint8_t cmd_len = 0;
+
+/* LED and button instances */
+static Button btn;
+static LED red_led, green_led, yellow_led;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -77,6 +92,181 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
 	if (huart->Instance == USART6) {
 		uart_tx_complete_callback(&uart6);
 	}
+}
+
+/* Send string (auto-selects IT or poll mode) */
+static void send_str(const char *s) {
+    if (uart_is_irq_mode(&uart6)) {
+        uart_it_send_string(&uart6, s);
+    } else {
+        uart_poll_send_string(&uart6, s);
+    }
+}
+
+/* Send single char */
+static void send_char(char c) {
+    if (uart_is_irq_mode(&uart6)) {
+        uart_it_send_byte(&uart6, (uint8_t)c);
+    } else {
+        uart_poll_send_byte(&uart6, (uint8_t)c);
+    }
+}
+
+/* Get state name */
+static const char* get_state_name(void) {
+    switch (traffic_state) {
+        case STATE_RED: return "red";
+        case STATE_GREEN: return "green";
+        case STATE_GREEN_BLINKING: return "blinking green";
+        case STATE_YELLOW: return "yellow";
+        default: return "unknown";
+    }
+}
+
+/* Simple string compare */
+static int str_eq(const char *a, const char *b) {
+    while (*a && *b) {
+        if (*a++ != *b++) return 0;
+    }
+    return *a == *b;
+}
+
+/* Check if string starts with prefix */
+static int str_starts(const char *s, const char *prefix) {
+    while (*prefix) {
+        if (*s++ != *prefix++) return 0;
+    }
+    return 1;
+}
+
+/* Parse integer from string */
+static int parse_int(const char *s) {
+    int val = 0;
+    while (*s >= '0' && *s <= '9') {
+        val = val * 10 + (*s - '0');
+        s++;
+    }
+    return val;
+}
+
+/* Process command */
+static void process_command(void) {
+    cmd_buf[cmd_len] = '\0';
+
+    if (str_eq(cmd_buf, "?")) {
+        /* Status query */
+        char buf[80];
+        int timeout_sec = red_timeout_ms / 1000;
+        char mode_char = uart_is_irq_mode(&uart6) ? 'I' : 'P';
+
+        /* Build response manually */
+        send_str(get_state_name());
+        send_str(" mode ");
+        send_char('0' + button_mode);
+        send_str(" timeout ");
+        if (timeout_sec >= 10) send_char('0' + (timeout_sec / 10));
+        send_char('0' + (timeout_sec % 10));
+        send_str(" ");
+        send_char(mode_char);
+        send_str("\r\n");
+
+    } else if (str_eq(cmd_buf, "set mode 1")) {
+        button_mode = 1;
+        send_str("OK\r\n");
+
+    } else if (str_eq(cmd_buf, "set mode 2")) {
+        button_mode = 2;
+        send_str("OK\r\n");
+
+    } else if (str_starts(cmd_buf, "set timeout ")) {
+        int val = parse_int(cmd_buf + 12);
+        if (val > 0) {
+            red_timeout_ms = val * 1000;
+            send_str("OK\r\n");
+        } else {
+            send_str("ERROR: invalid timeout\r\n");
+        }
+
+    } else if (str_eq(cmd_buf, "set interrupts on")) {
+        uart_set_irq_mode(&uart6, true);
+        send_str("OK\r\n");
+
+    } else if (str_eq(cmd_buf, "set interrupts off")) {
+        uart_set_irq_mode(&uart6, false);
+        send_str("OK\r\n");
+
+    } else if (cmd_len > 0) {
+        send_str("ERROR: unknown command\r\n");
+    }
+
+    cmd_len = 0;
+}
+
+/* Set traffic light state */
+static void set_state(TrafficState new_state) {
+    /* Turn off all LEDs */
+    led_deactivate(&red_led);
+    led_deactivate(&green_led);
+    led_deactivate(&yellow_led);
+
+    traffic_state = new_state;
+    state_start_time = HAL_GetTick();
+    last_blink_time = state_start_time;
+
+    /* Turn on appropriate LED */
+    switch (new_state) {
+        case STATE_RED:    led_activate(&red_led); break;
+        case STATE_GREEN:  led_activate(&green_led); break;
+        case STATE_YELLOW: led_activate(&yellow_led); break;
+        default: break;
+    }
+}
+
+/* Update traffic light state machine */
+static void update_traffic_light(void) {
+    uint32_t now = HAL_GetTick();
+    uint32_t elapsed = now - state_start_time;
+
+    switch (traffic_state) {
+    case STATE_RED:
+        if (elapsed >= red_timeout_ms) {
+            set_state(STATE_GREEN);
+        }
+        break;
+
+    case STATE_GREEN:
+        if (elapsed >= GREEN_DURATION_MS) {
+            set_state(STATE_GREEN_BLINKING);
+        }
+        break;
+
+    case STATE_GREEN_BLINKING:
+        if (elapsed >= GREEN_BLINK_DURATION_MS) {
+            set_state(STATE_YELLOW);
+        } else if (now - last_blink_time >= GREEN_BLINK_TOGGLE_MS) {
+            led_toggle(&green_led);
+            last_blink_time = now;
+        }
+        break;
+
+    case STATE_YELLOW:
+        if (elapsed >= YELLOW_DURATION_MS) {
+            set_state(STATE_RED);
+        }
+        break;
+    }
+}
+
+/* Handle button press (mode 1 only) */
+static void handle_button(void) {
+    if (button_mode != 1) return;
+
+    if (button_is_clicked(&btn)) {
+        if (traffic_state == STATE_RED) {
+            /* Skip to green immediately */
+            set_state(STATE_GREEN);
+        }
+    }
 }
 
 /* USER CODE END 0 */
@@ -112,148 +302,68 @@ int main(void)
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
   uart_init(&uart6, &huart6);
+
+  /* Initialize button and LEDs */
+  btn.GPIOx = GPIOC;
+  btn.GPIO_Pin = GPIO_PIN_15;
+  btn.last_pressed_time = 0;
+
+  red_led.GPIOx = GPIOD;
+  red_led.GPIO_Pin = GPIO_PIN_15;
+
+  green_led.GPIOx = GPIOD;
+  green_led.GPIO_Pin = GPIO_PIN_13;
+
+  yellow_led.GPIOx = GPIOD;
+  yellow_led.GPIO_Pin = GPIO_PIN_14;
+
+  /* Start in IRQ mode */
+  uart_set_irq_mode(&uart6, true);
+
+  /* Initialize traffic light */
+  set_state(STATE_RED);
+  send_str("Traffic light ready\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  // uint32_t HAL_GetTick();
-  
-  Button btn = {
-      .GPIOx = GPIOC,
-      .GPIO_Pin = GPIO_PIN_15,
-      .last_pressed_time = 0
-  };
-  LED red_led = {
-      .GPIOx = GPIOD,
-      .GPIO_Pin = GPIO_PIN_15
-  };
-  LED green_led = {
-      .GPIOx = GPIOD,
-      .GPIO_Pin = GPIO_PIN_13
-  };
-  LED yellow_led = {
-      .GPIOx = GPIOD,
-      .GPIO_Pin = GPIO_PIN_14
-  };
-
-  Colors current_color = RED;
-  uint32_t current_red_duration = RED_DURATION;
-  uint32_t color_activated_time = HAL_GetTick();
-  uint32_t last_green_blinking_toggle_time = 0;
-
-  led_activate(&red_led);
-
-  char hello_msg[] = "Hello, world!\r\n";
-  char irq_on_msg[] = "[IRQ mode ON]\r\n";
-  char irq_off_msg[] = "[Polling mode ON]\r\n";
   uint8_t c;
-
-  /* Start in IRQ mode */
-  uart_set_irq_mode(&uart6, true);
-  uart_it_send_string(&uart6, irq_on_msg);
 
   while (1)
   {
-      /* Button toggles between IRQ and Polling mode */
-      if (button_is_clicked(&btn)) {
-          if (uart_is_irq_mode(&uart6)) {
-              uart_set_irq_mode(&uart6, false);
-              uart_poll_send_string(&uart6, irq_off_msg);
-          } else {
-              uart_set_irq_mode(&uart6, true);
-              uart_it_send_string(&uart6, irq_on_msg);
-          }
-      }
+      /* Update traffic light state machine */
+      update_traffic_light();
 
+      /* Handle button (mode 1 only) */
+      handle_button();
+
+      /* Process UART input */
+      bool got_char = false;
       if (uart_is_irq_mode(&uart6)) {
-          if (uart_it_try_get_byte(&uart6, &c)) {
-              switch (c) {
-              case '!':
-                  uart_it_send_string(&uart6, hello_msg);
-                  break;
-              default:
-                  uart_it_send_byte(&uart6, c);
-                  break;
-              }
-          }
+          got_char = uart_it_try_get_byte(&uart6, &c);
       } else {
-          if (uart_poll_try_get_byte(&uart6, &c)) {
-              switch (c) {
-              case '!':
-                  uart_poll_send_string(&uart6, hello_msg);
-                  break;
-              default:
-                  uart_poll_send_byte(&uart6, c);
-                  break;
-              }
-          }
+          got_char = uart_poll_try_get_byte(&uart6, &c);
       }
 
-	  // blocking
-	  // HAL_UART_Transmit(&huart6, (uint8_t*)s, sizeof(s), uart_timeout);
-      // HAL_Delay(1000);
+      if (got_char) {
+          /* Echo the character */
+          send_char(c);
 
-//    uint32_t current_time = HAL_GetTick();
-//
-//    if (button_is_clicked(&btn)) {
-//      if (current_color == RED && current_red_duration < RED_DURATION) {
-//        current_color = GREEN;
-//        color_activated_time = current_time;
-//        led_deactivate(&red_led);
-//        led_activate(&green_led);
-//      } else if (current_color != GREEN) {
-//        current_red_duration = RED_DURATION / 4;
-//      }
-//    }
-//
-//    switch (current_color)
-//    {
-//    case RED:
-//      if (current_time - color_activated_time >= current_red_duration) {
-//        current_color = GREEN;
-//        color_activated_time = current_time;
-//        current_red_duration = RED_DURATION;
-//        led_deactivate(&red_led);
-//        led_activate(&green_led);
-//      }
-//      break;
-//    case GREEN:
-//      if (current_time - color_activated_time >= GREEN_DURATION) {
-//        current_color = GREEN_BLINKING;
-//        color_activated_time = current_time;
-//        last_green_blinking_toggle_time = current_time;
-//        led_deactivate(&green_led);
-//      }
-//      break;
-//    case GREEN_BLINKING:
-//      // if (current_time - color_activated_time >= GREEN_BLINKING_DURATION) {
-//      //   current_color = YELLOW;
-//      //   color_activated_time = current_time;
-//      //   led_deactivate(&green_led);
-//      //   led_activate(&yellow_led);
-//      // } else {
-//      //   led_toggle(&green_led);
-//      // }
-//      if (current_time - color_activated_time >= GREEN_BLINKING_DURATION) {
-//        current_color = YELLOW;
-//        color_activated_time = current_time;
-//        led_deactivate(&green_led);
-//        led_activate(&yellow_led);
-//      } else if (current_time - last_green_blinking_toggle_time >= GREEN_BLINKING_TOGGLE_DURATION) {
-//        last_green_blinking_toggle_time = current_time;
-//        led_toggle(&green_led);
-//      }
-//
-//      break;
-//    case YELLOW:
-//      if (current_time - color_activated_time >= YELLOW_DURATION) {
-//        current_color = RED;
-//        color_activated_time = current_time;
-//        led_deactivate(&yellow_led);
-//        led_activate(&red_led);
-//      }
-//      break;
-//    }
+          if (c == '\r' || c == '\n') {
+              /* End of command - process it */
+              send_str("\r\n");
+              process_command();
+          } else if (c == 127 || c == 8) {
+              /* Backspace */
+              if (cmd_len > 0) {
+                  cmd_len--;
+                  send_str("\b \b");
+              }
+          } else if (cmd_len < CMD_BUF_SIZE - 1) {
+              /* Add to buffer */
+              cmd_buf[cmd_len++] = c;
+          }
+      }
   }
     /* USER CODE END WHILE */
 
