@@ -63,6 +63,7 @@ static uint32_t state_start_time = 0;
 static uint32_t last_blink_time = 0;
 static uint32_t red_timeout_ms = DEFAULT_TIMEOUT_SEC * 1000;
 static uint8_t button_mode = 1;  /* 1 = button enabled, 2 = button ignored */
+static bool red_shortened = false;  /* flag: next red timeout will be /4 */
 
 /* Command buffer */
 static char cmd_buf[CMD_BUF_SIZE];
@@ -155,8 +156,8 @@ static void process_command(void) {
 
     if (str_eq(cmd_buf, "?")) {
         /* Status query */
-        char buf[80];
-        int timeout_sec = red_timeout_ms / 1000;
+        uint32_t effective_timeout = red_shortened ? (red_timeout_ms / 4) : red_timeout_ms;
+        int timeout_sec = effective_timeout / 1000;
         char mode_char = uart_is_irq_mode(&uart6) ? 'I' : 'P';
 
         /* Build response manually */
@@ -164,7 +165,8 @@ static void process_command(void) {
         send_str(" mode ");
         send_char('0' + button_mode);
         send_str(" timeout ");
-        if (timeout_sec >= 10) send_char('0' + (timeout_sec / 10));
+        if (timeout_sec >= 100) send_char('0' + (timeout_sec / 100) % 10);
+        if (timeout_sec >= 10) send_char('0' + (timeout_sec / 10) % 10);
         send_char('0' + (timeout_sec % 10));
         send_str(" ");
         send_char(mode_char);
@@ -227,9 +229,13 @@ static void update_traffic_light(void) {
     uint32_t now = HAL_GetTick();
     uint32_t elapsed = now - state_start_time;
 
+    /* Calculate effective red timeout (shortened if flag set) */
+    uint32_t effective_red_timeout = red_shortened ? (red_timeout_ms / 4) : red_timeout_ms;
+
     switch (traffic_state) {
     case STATE_RED:
-        if (elapsed >= red_timeout_ms) {
+        if (elapsed >= effective_red_timeout) {
+            red_shortened = false;  /* reset after red phase completes */
             set_state(STATE_GREEN);
         }
         break;
@@ -262,9 +268,18 @@ static void handle_button(void) {
     if (button_mode != 1) return;
 
     if (button_is_clicked(&btn)) {
-        if (traffic_state == STATE_RED) {
-            /* Skip to green immediately */
-            set_state(STATE_GREEN);
+        if (traffic_state == STATE_GREEN_BLINKING || traffic_state == STATE_YELLOW) {
+            /* First click during blink/yellow: shorten next red */
+            red_shortened = true;
+        } else if (traffic_state == STATE_RED) {
+            if (red_shortened) {
+                /* Second click during red: skip to green, reset */
+                red_shortened = false;
+                set_state(STATE_GREEN);
+            } else {
+                /* First click during red: shorten current red */
+                red_shortened = true;
+            }
         }
     }
 }
