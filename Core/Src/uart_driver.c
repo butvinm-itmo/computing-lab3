@@ -46,23 +46,8 @@ void uart_set_irq_mode(UART *uart, bool enable) {
 
     if (enable && !uart->irq_enabled) {
         /* Enable IRQ mode */
-        IRQn_Type irqn;
-        if      (uart->huart->Instance == USART1) irqn = USART1_IRQn;
-        else if (uart->huart->Instance == USART2) irqn = USART2_IRQn;
-        else if (uart->huart->Instance == USART3) irqn = USART3_IRQn;
-#ifdef UART4
-        else if (uart->huart->Instance == UART4)  irqn = UART4_IRQn;
-#endif
-#ifdef UART5
-        else if (uart->huart->Instance == UART5)  irqn = UART5_IRQn;
-#endif
-#ifdef USART6
-        else if (uart->huart->Instance == USART6) irqn = USART6_IRQn;
-#endif
-        else return;
-
-        HAL_NVIC_SetPriority(irqn, 0, 0);
-        HAL_NVIC_EnableIRQ(irqn);
+        HAL_NVIC_SetPriority(USART6_IRQn, 0, 0);
+        HAL_NVIC_EnableIRQ(USART6_IRQn);
         uart->irq_enabled = true;
 
         /* Start receiving */
@@ -70,24 +55,9 @@ void uart_set_irq_mode(UART *uart, bool enable) {
 
     } else if (!enable && uart->irq_enabled) {
         /* Disable IRQ mode */
-        IRQn_Type irqn;
-        if      (uart->huart->Instance == USART1) irqn = USART1_IRQn;
-        else if (uart->huart->Instance == USART2) irqn = USART2_IRQn;
-        else if (uart->huart->Instance == USART3) irqn = USART3_IRQn;
-#ifdef UART4
-        else if (uart->huart->Instance == UART4)  irqn = UART4_IRQn;
-#endif
-#ifdef UART5
-        else if (uart->huart->Instance == UART5)  irqn = UART5_IRQn;
-#endif
-#ifdef USART6
-        else if (uart->huart->Instance == USART6) irqn = USART6_IRQn;
-#endif
-        else return;
-
         HAL_UART_AbortReceive_IT(uart->huart);
         HAL_UART_AbortTransmit_IT(uart->huart);
-        HAL_NVIC_DisableIRQ(irqn);
+        HAL_NVIC_DisableIRQ(USART6_IRQn);
         uart->irq_enabled = false;
         uart->tx_busy = 0;
     }
