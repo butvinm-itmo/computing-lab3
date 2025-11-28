@@ -3,4 +3,7 @@
 *.elf
 *.su
 *.o
+*.d
+.DS_Store
 .vscode/
+venv/
