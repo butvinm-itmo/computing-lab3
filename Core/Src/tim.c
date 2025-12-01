@@ -146,9 +146,9 @@ void MX_TIM6_Init(void)
 
   /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 8999;
+  htim6.Init.Prescaler = 5999;  /* 60 MHz / 6000 = 10 kHz */
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 9999;
+  htim6.Init.Period = 999;  /* 10 kHz / 1000 = 10 Hz (100 ms) */
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -307,28 +307,11 @@ void HAL_TIM_Base_MspDeInit(TIM_HandleTypeDef* tim_baseHandle)
 }
 
 /* USER CODE BEGIN 1 */
+#include "musical_keyboard.h"
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* tim_baseHandle) {
-	static int phase = 0;
 	if (tim_baseHandle->Instance == TIM6) {
-		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);
-
-
-		phase++;
-		if (phase > 4) phase = 0;
-
-
-		int pulse = 0;
-		switch (phase) {
-		case 0: pulse = 0; break;
-		case 1: pulse = 10; break;
-		case 2: pulse = 30; break;
-		case 3: pulse = 60; break;
-		case 4: pulse = 100; break;
-		}
-
-		htim4.Instance->CCR2 = pulse;
-
-		htim1.Instance->CCR1 = 50;
+		musical_keyboard_timer_callback();
 	}
 }
 /* USER CODE END 1 */
