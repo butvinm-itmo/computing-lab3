@@ -71,7 +71,7 @@ static const uint16_t note_arr_table[9][7] = {
  */
 static void set_buzzer_frequency(uint16_t arr_value) {
     htim1.Instance->ARR = arr_value;
-    htim1.Instance->CCR1 = arr_value / 2;  /* 50% duty cycle */
+    htim1.Instance->CCR1 = arr_value / 2;
 }
 
 /**

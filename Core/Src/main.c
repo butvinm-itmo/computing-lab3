@@ -49,8 +49,8 @@
 
 /* USER CODE BEGIN PV */
 /* Musical keyboard state */
-static uint8_t current_octave = 4;  /* Default: 1st octave */
-static uint16_t note_duration_ms = 1000;  /* Default: 1.0 second */
+static uint8_t current_octave = 4;
+static uint16_t note_duration_ms = 1000;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -206,8 +206,8 @@ int main(void)
   musical_keyboard_init();
 
   /* Start timers */
-  HAL_TIM_Base_Start_IT(&htim6);  /* TIM6 for timing callbacks (100ms) */
-  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);  /* TIM1 for buzzer PWM */
+  HAL_TIM_Base_Start_IT(&htim6);
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
   /* Send welcome message */
   uart_send("\r\nMusical Keyboard Lab 3\r\n");
