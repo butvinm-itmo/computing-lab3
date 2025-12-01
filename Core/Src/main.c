@@ -63,16 +63,30 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN 0 */
 
 /**
- * @brief Simple UART printf function
+ * @brief Simple UART transmit function
  */
-static void uart_printf(const char* format, ...) {
-    char buffer[128];
-    va_list args;
-    va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
-    va_end(args);
+static void uart_send(const char* str) {
+    HAL_UART_Transmit(&huart6, (uint8_t*)str, strlen(str), 100);
+}
 
-    HAL_UART_Transmit(&huart6, (uint8_t*)buffer, strlen(buffer), 100);
+/**
+ * @brief Send integer as string
+ */
+static void uart_send_int(int value) {
+    char buffer[12];
+    snprintf(buffer, sizeof(buffer), "%d", value);
+    uart_send(buffer);
+}
+
+/**
+ * @brief Send duration in format X.Xs (e.g., "1.0s")
+ */
+static void uart_send_duration(uint16_t duration_ms) {
+    char buffer[16];
+    int seconds = duration_ms / 1000;
+    int tenths = (duration_ms % 1000) / 100;
+    snprintf(buffer, sizeof(buffer), "%d.%ds", seconds, tenths);
+    uart_send(buffer);
 }
 
 /**
@@ -83,50 +97,72 @@ static void process_uart_char(char c) {
         /* Play note Do-Si (0-6) */
         uint8_t note = c - '1';
         play_note(note, current_octave, note_duration_ms);
-        uart_printf("Playing: %s, octave %d, duration %.1fs\r\n",
-                    note_names[note], current_octave, note_duration_ms / 1000.0f);
+        uart_send("Playing: ");
+        uart_send(note_names[note]);
+        uart_send(", octave ");
+        uart_send_int(current_octave);
+        uart_send(", duration ");
+        uart_send_duration(note_duration_ms);
+        uart_send("\r\n");
     }
     else if (c == '+') {
         /* Increase octave */
         if (current_octave < MAX_OCTAVE) {
             current_octave++;
         }
-        uart_printf("Settings: octave %d, duration %.1fs\r\n",
-                    current_octave, note_duration_ms / 1000.0f);
+        uart_send("Settings: octave ");
+        uart_send_int(current_octave);
+        uart_send(", duration ");
+        uart_send_duration(note_duration_ms);
+        uart_send("\r\n");
     }
     else if (c == '-') {
         /* Decrease octave */
         if (current_octave > MIN_OCTAVE) {
             current_octave--;
         }
-        uart_printf("Settings: octave %d, duration %.1fs\r\n",
-                    current_octave, note_duration_ms / 1000.0f);
+        uart_send("Settings: octave ");
+        uart_send_int(current_octave);
+        uart_send(", duration ");
+        uart_send_duration(note_duration_ms);
+        uart_send("\r\n");
     }
     else if (c == 'A') {
         /* Increase duration */
         if (note_duration_ms < MAX_DURATION_MS) {
             note_duration_ms += DURATION_STEP_MS;
         }
-        uart_printf("Settings: octave %d, duration %.1fs\r\n",
-                    current_octave, note_duration_ms / 1000.0f);
+        uart_send("Settings: octave ");
+        uart_send_int(current_octave);
+        uart_send(", duration ");
+        uart_send_duration(note_duration_ms);
+        uart_send("\r\n");
     }
     else if (c == 'a') {
         /* Decrease duration */
         if (note_duration_ms > MIN_DURATION_MS) {
             note_duration_ms -= DURATION_STEP_MS;
         }
-        uart_printf("Settings: octave %d, duration %.1fs\r\n",
-                    current_octave, note_duration_ms / 1000.0f);
+        uart_send("Settings: octave ");
+        uart_send_int(current_octave);
+        uart_send(", duration ");
+        uart_send_duration(note_duration_ms);
+        uart_send("\r\n");
     }
     else if (c == '\r' || c == '\n') {
         /* Play scale */
         play_scale(current_octave, note_duration_ms);
-        uart_printf("Playing scale: octave %d, duration %.1fs\r\n",
-                    current_octave, note_duration_ms / 1000.0f);
+        uart_send("Playing scale: octave ");
+        uart_send_int(current_octave);
+        uart_send(", duration ");
+        uart_send_duration(note_duration_ms);
+        uart_send("\r\n");
     }
     else {
         /* Invalid character */
-        uart_printf("Invalid character: %d\r\n", (int)c);
+        uart_send("Invalid character: ");
+        uart_send_int((int)c);
+        uart_send("\r\n");
     }
 }
 
@@ -174,10 +210,13 @@ int main(void)
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);  /* TIM1 for buzzer PWM */
 
   /* Send welcome message */
-  uart_printf("\r\nMusical Keyboard Lab 3\r\n");
-  uart_printf("Commands: 1-7 (notes), +/- (octave), A/a (duration), Enter (scale)\r\n");
-  uart_printf("Settings: octave %d, duration %.1fs\r\n\r\n",
-              current_octave, note_duration_ms / 1000.0f);
+  uart_send("\r\nMusical Keyboard Lab 3\r\n");
+  uart_send("Commands: 1-7 (notes), +/- (octave), A/a (duration), Enter (scale)\r\n");
+  uart_send("Settings: octave ");
+  uart_send_int(current_octave);
+  uart_send(", duration ");
+  uart_send_duration(note_duration_ms);
+  uart_send("\r\n\r\n");
 
   /* USER CODE END 2 */
 
