@@ -171,6 +171,30 @@ while (1) {
 - Обработка неверных символов (тесты 22-27)
 - Последовательности нот и мелодии (тесты 28-29)
 
+**Результат тестирования:**
+
+```
+--- Testing Note Playback (1-7) ---
+resp: Playing: Do, octave 4, duration 1.0s
+
+✓ Play Do (1): PASS
+resp: Playing: Re, octave 4, duration 1.0s
+
+✓ Play Re (2): PASS
+✓ Play Mi (3): PASS
+✓ Play Fa (4): PASS
+✓ Play Sol (5): PASS
+✓ Play La (6): PASS
+✓ Play Si (7): PASS
+
+--- Testing Octave Changes (+/-) ---
+✓ Increase octave (+): PASS
+✓ Play in octave 5: PASS
+✓ Decrease octave (-): PASS
+✓ Increase to octave 8: PASS
+✓ Cannot exceed octave 8: PASS
+```
+
 ## Листинги исходного кода
 
 ### musical_keyboard.h
