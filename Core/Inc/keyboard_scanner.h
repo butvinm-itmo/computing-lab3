@@ -15,7 +15,7 @@ extern "C" {
 #define KB_INPUT_REG            0x0
 #define KB_OUTPUT_REG           0x1
 #define KB_CONFIG_REG           0x3
-#define KB_DEBOUNCE_TIME_MS     200
+#define KB_DEBOUNCE_TIME_MS     50
 
 #define SIDE_BUTTON_PORT        GPIOC
 #define SIDE_BUTTON_PIN         GPIO_PIN_15

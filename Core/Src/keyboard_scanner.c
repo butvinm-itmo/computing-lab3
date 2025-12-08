@@ -14,10 +14,6 @@ void keyboard_scanner_init(void) {
 int keyboard_scanner_get_button(void) {
     const uint32_t current_time = HAL_GetTick();
 
-    if (current_time - last_pressing_time < KB_DEBOUNCE_TIME_MS) {
-        return -1;
-    }
-
     int index = -1;
     uint8_t reg_buffer = ~0;
     uint8_t tmp = 0;
@@ -94,12 +90,15 @@ int keyboard_scanner_get_button(void) {
         return -1;
     }
 
-    last_pressing_time = current_time;
-
     if (index == last_pressed_btn_index) {
         return -1;
     }
 
+    if (current_time - last_pressing_time < KB_DEBOUNCE_TIME_MS) {
+        return -1;
+    }
+
+    last_pressing_time = current_time;
     last_pressed_btn_index = index;
     return index;
 }
