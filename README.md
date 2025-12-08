@@ -144,6 +144,106 @@ STATE_PLAYING_SCALE --> STATE_IDLE : Принудительная останов
 @enduml
 ```
 
+**Блок-схема основного алгоритма:**
+
+*Главный цикл программы:*
+
+```mermaid
+flowchart TD
+    Start([Начало программы]) --> Init1[Инициализация HAL]
+    Init1 --> Init2[Настройка тактирования<br/>SystemClock_Config]
+    Init2 --> Init3[Инициализация<br/>GPIO, UART, TIM]
+    Init3 --> Init4[uart_init]
+    Init4 --> Init5[musical_keyboard_init]
+    Init5 --> Init6[Запуск таймеров<br/>TIM1, TIM6]
+    Init6 --> Loop[Главный цикл]
+
+    Loop --> UpdateKB[musical_keyboard_update]
+    UpdateKB --> CheckUART{uart_poll_try_get_byte<br/>Получен символ?}
+
+    CheckUART -->|Нет| Loop
+    CheckUART -->|Да| Dispatch{Тип символа?}
+
+    Dispatch -->|'1'-'7'| Note[Команда: Нота]
+    Dispatch -->|'+'| OctUp[Команда: Октава +]
+    Dispatch -->|'-'| OctDown[Команда: Октава -]
+    Dispatch -->|'A'| DurUp[Команда: Длительность +]
+    Dispatch -->|'a'| DurDown[Команда: Длительность -]
+    Dispatch -->|Enter| Scale[Команда: Гамма]
+    Dispatch -->|Другой| Invalid[Команда: Неверный символ]
+
+    Note --> Loop
+    OctUp --> Loop
+    OctDown --> Loop
+    DurUp --> Loop
+    DurDown --> Loop
+    Scale --> Loop
+    Invalid --> Loop
+```
+
+*Обработка команды воспроизведения ноты ('1'-'7'):*
+
+```mermaid
+flowchart TD
+    Start([Символ '1'-'7']) --> Calc[Вычисление индекса ноты:<br/>note = c - '1']
+    Calc --> Play[play_note<br/>note, octave, duration]
+    Play --> Out[Вывод в UART:<br/>Playing: нота, октава, длительность]
+    Out --> End([Возврат в главный цикл])
+```
+
+*Обработка команд изменения октавы ('+'/'-'):*
+
+```mermaid
+flowchart TD
+    Start([Символ '+' или '-']) --> CheckPlus{Символ '+' ?}
+    CheckPlus -->|Да| CheckMax{octave < MAX_OCTAVE?}
+    CheckMax -->|Да| Inc[octave++]
+    CheckMax -->|Нет| Output
+    Inc --> Output
+
+    CheckPlus -->|Нет| CheckMin{octave > MIN_OCTAVE?}
+    CheckMin -->|Да| Dec[octave--]
+    CheckMin -->|Нет| Output
+    Dec --> Output
+
+    Output[Вывод в UART:<br/>Settings: октава, длительность] --> End([Возврат в главный цикл])
+```
+
+*Обработка команд изменения длительности ('A'/'a'):*
+
+```mermaid
+flowchart TD
+    Start([Символ 'A' или 'a']) --> CheckUp{Символ 'A' ?}
+    CheckUp -->|Да| CheckMax{duration < MAX_DURATION?}
+    CheckMax -->|Да| Inc[duration += STEP]
+    CheckMax -->|Нет| Output
+    Inc --> Output
+
+    CheckUp -->|Нет| CheckMin{duration > MIN_DURATION?}
+    CheckMin -->|Да| Dec[duration -= STEP]
+    CheckMin -->|Нет| Output
+    Dec --> Output
+
+    Output[Вывод в UART:<br/>Settings: октава, длительность] --> End([Возврат в главный цикл])
+```
+
+*Обработка команды воспроизведения гаммы (Enter):*
+
+```mermaid
+flowchart TD
+    Start([Символ Enter]) --> Play[play_scale<br/>octave, duration]
+    Play --> Out[Вывод в UART:<br/>Playing scale: октава, длительность]
+    Out --> End([Возврат в главный цикл])
+```
+
+*Обработка неверного символа:*
+
+```mermaid
+flowchart TD
+    Start([Неизвестный символ]) --> Out[Вывод в UART:<br/>Invalid character: ASCII код]
+    Out --> End([Возврат в главный цикл])
+```
+
 **Таблица частот:**
 Предрасчитанная таблица ARR-значений для 63 комбинаций (9 октав × 7 нот):
 
