@@ -209,15 +209,6 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim6);
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
-  /* Send welcome message */
-  uart_send("\r\nMusical Keyboard Lab 3\r\n");
-  uart_send("Commands: 1-7 (notes), +/- (octave), A/a (duration), Enter (scale)\r\n");
-  uart_send("Settings: octave ");
-  uart_send_int(current_octave);
-  uart_send(", duration ");
-  uart_send_duration(note_duration_ms);
-  uart_send("\r\n\r\n");
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
