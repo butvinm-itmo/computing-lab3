@@ -215,15 +215,6 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim6);
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
-  uart_send("Lab 4 Variant 1: Musical Keyboard with I2C Matrix Keypad\r\n");
-  uart_send("Mode: Musical keyboard\r\n");
-  uart_send("Press side button to switch modes\r\n");
-  uart_send("\r\nButton mapping:\r\n");
-  uart_send("  1-7: Notes Do-Si\r\n");
-  uart_send("  8: Octave up, 9: Octave down\r\n");
-  uart_send("  10: Duration up, 11: Duration down\r\n");
-  uart_send("  12: Play scale\r\n\r\n");
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
