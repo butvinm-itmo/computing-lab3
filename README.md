@@ -227,6 +227,190 @@ resp: Playing: Re, octave 4, duration 1.0s
 
 ## Листинги исходного кода
 
+### uart_driver.h
+
+```c
+#ifndef INC_UART_DRIVER_H_
+#define INC_UART_DRIVER_H_
+
+#include <stdbool.h>
+#include <stdint.h>
+#include "stm32f4xx_hal.h"
+
+#define UART_RX_BUF_SIZE 64
+#define UART_TX_BUF_SIZE 64
+
+typedef struct {
+    UART_HandleTypeDef *huart;
+    volatile uint8_t rx_buf[UART_RX_BUF_SIZE];
+    volatile uint16_t rx_head;
+    volatile uint16_t rx_tail;
+    volatile uint8_t tx_buf[UART_TX_BUF_SIZE];
+    volatile uint16_t tx_head;
+    volatile uint16_t tx_tail;
+    volatile uint8_t tx_busy;
+    uint8_t hal_rx_byte;
+    volatile bool irq_enabled;
+} UART;
+
+void uart_init(UART *uart, UART_HandleTypeDef *huart);
+void uart_set_irq_mode(UART *uart, bool enable);
+bool uart_is_irq_mode(UART *uart);
+
+bool uart_it_try_get_byte(UART *uart, uint8_t *byte);
+bool uart_it_send_byte(UART *uart, uint8_t byte);
+void uart_it_send_string(UART *uart, const char *str);
+uint16_t uart_it_rx_available(UART *uart);
+uint16_t uart_it_tx_free(UART *uart);
+void uart_rx_complete_callback(UART *uart);
+void uart_tx_complete_callback(UART *uart);
+
+bool uart_poll_try_get_byte(UART *uart, uint8_t *byte);
+void uart_poll_send_byte(UART *uart, uint8_t byte);
+void uart_poll_send_string(UART *uart, const char *str);
+
+#endif
+```
+
+### uart_driver.c
+
+```c
+#include "uart_driver.h"
+#include <string.h>
+
+static void start_rx_it(UART *uart) {
+    HAL_UART_Receive_IT(uart->huart, &uart->hal_rx_byte, 1);
+}
+
+static void start_tx_from_buffer(UART *uart) {
+    if (uart->tx_tail == uart->tx_head) {
+        return;
+    }
+    uint8_t byte = uart->tx_buf[uart->tx_tail];
+    uart->tx_tail = (uart->tx_tail + 1) % UART_TX_BUF_SIZE;
+    uart->tx_busy = 1;
+    HAL_UART_Transmit_IT(uart->huart, &byte, 1);
+}
+
+void uart_init(UART *uart, UART_HandleTypeDef *huart) {
+    uart->huart = huart;
+    uart->rx_head = 0;
+    uart->rx_tail = 0;
+    uart->tx_head = 0;
+    uart->tx_tail = 0;
+    uart->tx_busy = 0;
+    uart->hal_rx_byte = 0;
+    uart->irq_enabled = false;
+}
+
+void uart_set_irq_mode(UART *uart, bool enable) {
+    if (uart->huart == NULL) return;
+
+    if (enable && !uart->irq_enabled) {
+        HAL_NVIC_SetPriority(USART6_IRQn, 0, 0);
+        HAL_NVIC_EnableIRQ(USART6_IRQn);
+        uart->irq_enabled = true;
+        start_rx_it(uart);
+    } else if (!enable && uart->irq_enabled) {
+        HAL_UART_AbortReceive_IT(uart->huart);
+        HAL_UART_AbortTransmit_IT(uart->huart);
+        HAL_NVIC_DisableIRQ(USART6_IRQn);
+        uart->irq_enabled = false;
+        uart->tx_busy = 0;
+    }
+}
+
+bool uart_is_irq_mode(UART *uart) {
+    return uart->irq_enabled;
+}
+
+bool uart_it_try_get_byte(UART *uart, uint8_t *byte) {
+    if (uart->rx_tail == uart->rx_head) {
+        return false;
+    }
+    *byte = uart->rx_buf[uart->rx_tail];
+    uart->rx_tail = (uart->rx_tail + 1) % UART_RX_BUF_SIZE;
+    return true;
+}
+
+bool uart_it_send_byte(UART *uart, uint8_t byte) {
+    uint16_t next_head = (uart->tx_head + 1) % UART_TX_BUF_SIZE;
+    if (next_head == uart->tx_tail) {
+        return false;
+    }
+    uart->tx_buf[uart->tx_head] = byte;
+    uart->tx_head = next_head;
+
+    if (!uart->tx_busy) {
+        start_tx_from_buffer(uart);
+    }
+    return true;
+}
+
+void uart_it_send_string(UART *uart, const char *str) {
+    while (*str) {
+        if (!uart_it_send_byte(uart, (uint8_t)*str)) {
+            break;
+        }
+        str++;
+    }
+}
+
+uint16_t uart_it_rx_available(UART *uart) {
+    if (uart->rx_head >= uart->rx_tail) {
+        return uart->rx_head - uart->rx_tail;
+    }
+    return UART_RX_BUF_SIZE - uart->rx_tail + uart->rx_head;
+}
+
+uint16_t uart_it_tx_free(UART *uart) {
+    if (uart->tx_head >= uart->tx_tail) {
+        return UART_TX_BUF_SIZE - 1 - (uart->tx_head - uart->tx_tail);
+    }
+    return uart->tx_tail - uart->tx_head - 1;
+}
+
+void uart_rx_complete_callback(UART *uart) {
+    uint16_t next_head = (uart->rx_head + 1) % UART_RX_BUF_SIZE;
+    if (next_head != uart->rx_tail) {
+        uart->rx_buf[uart->rx_head] = uart->hal_rx_byte;
+        uart->rx_head = next_head;
+    }
+
+    if (uart->irq_enabled) {
+        start_rx_it(uart);
+    }
+}
+
+void uart_tx_complete_callback(UART *uart) {
+    uart->tx_busy = 0;
+    if (uart->tx_tail != uart->tx_head) {
+        start_tx_from_buffer(uart);
+    }
+}
+
+bool uart_poll_try_get_byte(UART *uart, uint8_t *byte) {
+    if (__HAL_UART_GET_FLAG(uart->huart, UART_FLAG_RXNE)) {
+        *byte = (uint8_t)(uart->huart->Instance->DR & 0xFF);
+        return true;
+    }
+    return false;
+}
+
+void uart_poll_send_byte(UART *uart, uint8_t byte) {
+    while (!__HAL_UART_GET_FLAG(uart->huart, UART_FLAG_TXE));
+    uart->huart->Instance->DR = byte;
+}
+
+void uart_poll_send_string(UART *uart, const char *str) {
+    while (*str) {
+        uart_poll_send_byte(uart, (uint8_t)*str);
+        str++;
+    }
+    while (!__HAL_UART_GET_FLAG(uart->huart, UART_FLAG_TC));
+}
+```
+
 ### musical_keyboard.h
 
 ```c
@@ -407,15 +591,17 @@ void musical_keyboard_update(void) {
 
 ```c
 #include "musical_keyboard.h"
+#include "uart_driver.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
 
+static UART uart6;
 static uint8_t current_octave = 4;
 static uint16_t note_duration_ms = 1000;
 
 static void uart_send(const char* str) {
-    HAL_UART_Transmit(&huart6, (uint8_t*)str, strlen(str), 100);
+    uart_poll_send_string(&uart6, str);
 }
 
 static void uart_send_int(int value) {
@@ -508,22 +694,15 @@ int main(void) {
     MX_TIM4_Init();
     MX_TIM1_Init();
 
+    uart_init(&uart6, &huart6);
     musical_keyboard_init();
     HAL_TIM_Base_Start_IT(&htim6);
     HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
-    uart_send("\r\nMusical Keyboard Lab 3\r\n");
-    uart_send("Commands: 1-7 (notes), +/- (octave), A/a (duration), Enter (scale)\r\n");
-    uart_send("Settings: octave ");
-    uart_send_int(current_octave);
-    uart_send(", duration ");
-    uart_send_duration(note_duration_ms);
-    uart_send("\r\n\r\n");
-
     while (1) {
         musical_keyboard_update();
         uint8_t c;
-        if (HAL_UART_Receive(&huart6, &c, 1, 0) == HAL_OK) {
+        if (uart_poll_try_get_byte(&uart6, &c)) {
             process_uart_char(c);
         }
     }

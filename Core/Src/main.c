@@ -25,6 +25,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "musical_keyboard.h"
+#include "uart_driver.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
@@ -48,6 +49,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+/* UART driver instance */
+static UART uart6;
+
 /* Musical keyboard state */
 static uint8_t current_octave = 4;
 static uint16_t note_duration_ms = 1000;
@@ -62,11 +66,8 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-/**
- * @brief Simple UART transmit function
- */
 static void uart_send(const char* str) {
-    HAL_UART_Transmit(&huart6, (uint8_t*)str, strlen(str), 100);
+    uart_poll_send_string(&uart6, str);
 }
 
 /**
@@ -202,6 +203,9 @@ int main(void)
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
 
+  /* Initialize UART driver in polling mode */
+  uart_init(&uart6, &huart6);
+
   /* Initialize musical keyboard */
   musical_keyboard_init();
 
@@ -220,7 +224,7 @@ int main(void)
 
       /* Check for UART input */
       uint8_t c;
-      if (HAL_UART_Receive(&huart6, &c, 1, 0) == HAL_OK) {
+      if (uart_poll_try_get_byte(&uart6, &c)) {
           /* Process the received character */
           process_uart_char(c);
       }
