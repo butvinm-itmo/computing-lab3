@@ -610,6 +610,7 @@ static void uart_send_int(int value) {
     uart_send(buffer);
 }
 
+/* Send duration in format X.Xs (e.g., "1.0s") */
 static void uart_send_duration(uint16_t duration_ms) {
     char buffer[16];
     int seconds = duration_ms / 1000;

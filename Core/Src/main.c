@@ -49,10 +49,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-/* UART driver instance */
 static UART uart6;
-
-/* Musical keyboard state */
 static uint8_t current_octave = 4;
 static uint16_t note_duration_ms = 1000;
 /* USER CODE END PV */
@@ -70,18 +67,13 @@ static void uart_send(const char* str) {
     uart_poll_send_string(&uart6, str);
 }
 
-/**
- * @brief Send integer as string
- */
 static void uart_send_int(int value) {
     char buffer[12];
     snprintf(buffer, sizeof(buffer), "%d", value);
     uart_send(buffer);
 }
 
-/**
- * @brief Send duration in format X.Xs (e.g., "1.0s")
- */
+/* Send duration in format X.Xs (e.g., "1.0s") */
 static void uart_send_duration(uint16_t duration_ms) {
     char buffer[16];
     int seconds = duration_ms / 1000;
@@ -90,12 +82,8 @@ static void uart_send_duration(uint16_t duration_ms) {
     uart_send(buffer);
 }
 
-/**
- * @brief Process single character command from UART
- */
 static void process_uart_char(char c) {
     if (c >= '1' && c <= '7') {
-        /* Play note Do-Si (0-6) */
         uint8_t note = c - '1';
         play_note(note, current_octave, note_duration_ms);
         uart_send("Playing: ");
@@ -107,7 +95,6 @@ static void process_uart_char(char c) {
         uart_send("\r\n");
     }
     else if (c == '+') {
-        /* Increase octave */
         if (current_octave < MAX_OCTAVE) {
             current_octave++;
         }
@@ -118,7 +105,6 @@ static void process_uart_char(char c) {
         uart_send("\r\n");
     }
     else if (c == '-') {
-        /* Decrease octave */
         if (current_octave > MIN_OCTAVE) {
             current_octave--;
         }
@@ -129,7 +115,6 @@ static void process_uart_char(char c) {
         uart_send("\r\n");
     }
     else if (c == 'A') {
-        /* Increase duration */
         if (note_duration_ms < MAX_DURATION_MS) {
             note_duration_ms += DURATION_STEP_MS;
         }
@@ -140,7 +125,6 @@ static void process_uart_char(char c) {
         uart_send("\r\n");
     }
     else if (c == 'a') {
-        /* Decrease duration */
         if (note_duration_ms > MIN_DURATION_MS) {
             note_duration_ms -= DURATION_STEP_MS;
         }
@@ -151,7 +135,6 @@ static void process_uart_char(char c) {
         uart_send("\r\n");
     }
     else if (c == '\r' || c == '\n') {
-        /* Play scale */
         play_scale(current_octave, note_duration_ms);
         uart_send("Playing scale: octave ");
         uart_send_int(current_octave);
@@ -160,7 +143,6 @@ static void process_uart_char(char c) {
         uart_send("\r\n");
     }
     else {
-        /* Invalid character */
         uart_send("Invalid character: ");
         uart_send_int((int)c);
         uart_send("\r\n");
@@ -203,13 +185,8 @@ int main(void)
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
 
-  /* Initialize UART driver in polling mode */
   uart_init(&uart6, &huart6);
-
-  /* Initialize musical keyboard */
   musical_keyboard_init();
-
-  /* Start timers */
   HAL_TIM_Base_Start_IT(&htim6);
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
@@ -219,13 +196,10 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-      /* Update musical keyboard state (non-blocking) */
       musical_keyboard_update();
 
-      /* Check for UART input */
       uint8_t c;
       if (uart_poll_try_get_byte(&uart6, &c)) {
-          /* Process the received character */
           process_uart_char(c);
       }
     /* USER CODE END WHILE */
