@@ -1,26 +1,14 @@
-/* USER CODE BEGIN Header */
-/**
-  ******************************************************************************
-  * @file    musical_keyboard.c
-  * @brief   Musical keyboard implementation for Lab 3
-  ******************************************************************************
-  */
-/* USER CODE END Header */
-
 #include "musical_keyboard.h"
 #include "tim.h"
 
-/* Note names for display */
 const char* note_names[7] = {"Do", "Re", "Mi", "Fa", "Sol", "La", "Si"};
 
-/* Playback state machine */
 typedef enum {
     STATE_IDLE,
     STATE_PLAYING_SINGLE,
     STATE_PLAYING_SCALE
 } PlaybackState;
 
-/* Module state variables */
 static PlaybackState current_state = STATE_IDLE;
 static uint32_t play_start_time = 0;
 static uint16_t play_duration_ms = 0;
@@ -65,30 +53,18 @@ static const uint16_t note_arr_table[9][7] = {
     {30, 27, 24, 23, 20, 18, 16}  /* Do=4186Hz, Re=4699Hz, Mi=5274Hz, Fa=5588Hz, Sol=6272Hz, La=7040Hz, Si=7902Hz */
 };
 
-/**
- * @brief Set buzzer frequency by updating TIM1 ARR register
- * @param arr_value Auto-reload register value (from lookup table)
- */
 static void set_buzzer_frequency(uint16_t arr_value) {
     htim1.Instance->ARR = arr_value;
     htim1.Instance->CCR1 = arr_value / 2;
 }
 
-/**
- * @brief Turn buzzer on (start PWM)
- */
 static void buzzer_on(void) {
     HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 }
 
-/**
- * @brief Turn buzzer off (stop PWM)
- */
 static void buzzer_off(void) {
     HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_1);
 }
-
-/* Public functions */
 
 void musical_keyboard_init(void) {
     current_state = STATE_IDLE;
@@ -96,39 +72,30 @@ void musical_keyboard_init(void) {
 }
 
 void play_note(uint8_t note, uint8_t octave, uint16_t duration_ms) {
-    /* Validate parameters */
     if (note > 6 || octave > 8) {
         return;
     }
 
-    /* Stop any current playback */
     stop_note();
-
-    /* Set frequency and start playing */
     set_buzzer_frequency(note_arr_table[octave][note]);
     buzzer_on();
 
-    /* Update state */
     current_state = STATE_PLAYING_SINGLE;
     play_start_time = HAL_GetTick();
     play_duration_ms = duration_ms;
 }
 
 void play_scale(uint8_t octave, uint16_t duration_ms) {
-    /* Validate parameters */
     if (octave > 8) {
         return;
     }
 
-    /* Stop any current playback */
     stop_note();
 
-    /* Start scale playback */
     scale_octave = octave;
     scale_current_note = 0;
     scale_note_duration = duration_ms;
 
-    /* Play first note */
     set_buzzer_frequency(note_arr_table[octave][0]);
     buzzer_on();
 
@@ -146,23 +113,18 @@ void musical_keyboard_update(void) {
 
     switch (current_state) {
         case STATE_PLAYING_SINGLE:
-            /* Check if note duration has elapsed */
             if (current_time - play_start_time >= play_duration_ms) {
                 stop_note();
             }
             break;
 
         case STATE_PLAYING_SCALE:
-            /* Check if current note duration has elapsed */
             if (current_time - play_start_time >= scale_note_duration) {
-                /* Move to next note */
                 scale_current_note++;
 
                 if (scale_current_note >= 7) {
-                    /* Scale complete */
                     stop_note();
                 } else {
-                    /* Play next note */
                     set_buzzer_frequency(note_arr_table[scale_octave][scale_current_note]);
                     buzzer_on();
                     play_start_time = current_time;
@@ -172,12 +134,6 @@ void musical_keyboard_update(void) {
 
         case STATE_IDLE:
         default:
-            /* Nothing to do */
             break;
     }
-}
-
-void musical_keyboard_timer_callback(void) {
-    /* Timer callback - currently unused but available for future enhancements */
-    /* Can be used for more precise timing if needed */
 }
