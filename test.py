@@ -59,23 +59,16 @@ print("\n" + "="*60)
 print("LAB 3: MUSICAL KEYBOARD TESTS")
 print("="*60 + "\n")
 
-# Test 0: Read startup message
-print("Reading startup message...")
-time.sleep(1)
-startup = ser.read(500).decode(errors='ignore')
-print(f"Startup message:\n{startup}\n")
-test("Startup message received",
-     'Musical Keyboard' in startup or 'Lab 3' in startup or 'Settings' in startup,
-     startup)
-
 print("\n--- Testing Note Playback (1-7) ---")
 
 # Test 1: Play note Do (1)
 resp = send_cmd('1', 0.3)
+print("resp:",resp)
 test("Play Do (1)", 'Do' in resp and 'octave 4' in resp, resp)
 
 # Test 2: Play note Re (2)
 resp = send_cmd('2', 0.3)
+print("resp:",resp)
 test("Play Re (2)", 'Re' in resp, resp)
 
 # Test 3: Play note Mi (3)

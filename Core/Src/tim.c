@@ -307,11 +307,4 @@ void HAL_TIM_Base_MspDeInit(TIM_HandleTypeDef* tim_baseHandle)
 }
 
 /* USER CODE BEGIN 1 */
-#include "musical_keyboard.h"
-
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* tim_baseHandle) {
-	if (tim_baseHandle->Instance == TIM6) {
-		musical_keyboard_timer_callback();
-	}
-}
 /* USER CODE END 1 */
