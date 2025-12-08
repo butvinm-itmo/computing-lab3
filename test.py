@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Test script for Lab 3: Musical Keyboard
-Tests all required functionality of the musical keyboard implementation.
+Test script for Lab 4: I2C Matrix Keyboard Musical Keyboard
+Interactive test suite - prompts user to press buttons on matrix keypad.
 """
 import sys
 import serial
@@ -34,195 +34,213 @@ ser.reset_input_buffer()
 passed = 0
 failed = 0
 
-def send_cmd(cmd, wait_time=0.5):
-    """Send command (single char or Enter) and return response"""
-    if cmd == '\n':
-        ser.write(b'\r')
+def wait_for_input(prompt, timeout=5, is_side_button=False):
+    """Prompt user to press a button and capture UART output"""
+    print(f"\n>>> {prompt}")
+    if is_side_button:
+        input("    Press ENTER when ready, then press the SIDE BUTTON on panel...")
     else:
-        ser.write(cmd.encode())
-    time.sleep(wait_time)
-    resp = ser.read(500).decode(errors='ignore')
-    return resp
+        input("    Press ENTER when ready, then press the button on keypad...")
+    ser.reset_input_buffer()
+    time.sleep(0.1)
+
+    # Wait for response
+    start = time.time()
+    response = ""
+    while time.time() - start < timeout:
+        if ser.in_waiting:
+            chunk = ser.read(ser.in_waiting).decode(errors='ignore')
+            response += chunk
+            time.sleep(0.2)  # Wait a bit more in case there's more data
+
+    return response.strip()
 
 def test(name, condition, response=""):
     global passed, failed
     if condition:
-        print(f"✓ {name}: PASS")
+        print(f"    ✓ {name}: PASS")
         passed += 1
     else:
-        print(f"✗ {name}: FAIL")
+        print(f"    ✗ {name}: FAIL")
         if response:
-            print(f"  Response: {repr(response)}")
+            print(f"      Response: {repr(response)}")
         failed += 1
 
-print("\n" + "="*60)
-print("LAB 3: MUSICAL KEYBOARD TESTS")
-print("="*60 + "\n")
+print("\n" + "="*70)
+print("LAB 4: I2C MATRIX KEYBOARD TESTS")
+print("="*70 + "\n")
 
-print("\n--- Testing Note Playback (1-7) ---")
+print("This test suite is INTERACTIVE.")
+print("You will be prompted to press buttons on the matrix keypad.")
+print("Make sure the device is in the correct mode for each test.")
+print("\nPress ENTER to begin...")
+input()
 
-# Test 1: Play note Do (1)
-resp = send_cmd('1', 0.3)
-print("resp:",resp)
-test("Play Do (1)", 'Do' in resp and 'octave 4' in resp, resp)
+# Read initial message (if any)
+time.sleep(1)
+initial = ser.read(ser.in_waiting).decode(errors='ignore')
+if initial:
+    print("\nInitial message from device:")
+    print(initial)
+else:
+    print("\nNo initial message (device ready)")
 
-# Test 2: Play note Re (2)
-resp = send_cmd('2', 0.3)
-print("resp:",resp)
-test("Play Re (2)", 'Re' in resp, resp)
+print("\n" + "="*70)
+print("PART 1: MODE SWITCHING")
+print("="*70)
+print("Note: Device starts in MUSICAL mode by default")
+print("IMPORTANT: The SIDE BUTTON is on the panel (PC15), NOT on the matrix keypad!")
 
-# Test 3: Play note Mi (3)
-resp = send_cmd('3', 0.3)
-test("Play Mi (3)", 'Mi' in resp, resp)
+# Test 1: Switch to test mode (to verify we're starting from musical mode)
+resp = wait_for_input("Switch to TEST mode", is_side_button=True)
+test("Switch to test mode",
+     "test" in resp.lower() and "mode" in resp.lower(),
+     resp)
 
-# Test 4: Play note Fa (4)
-resp = send_cmd('4', 0.3)
-test("Play Fa (4)", 'Fa' in resp, resp)
+print("\n" + "="*70)
+print("PART 2: KEYBOARD TEST MODE (Testing all 12 buttons)")
+print("="*70)
 
-# Test 5: Play note Sol (5)
-resp = send_cmd('5', 0.3)
-test("Play Sol (5)", 'Sol' in resp, resp)
+# Test buttons 1-12 in test mode
+for btn in range(1, 13):
+    resp = wait_for_input(f"Press button {btn} on the keypad")
+    test(f"Button {btn} detected",
+         f"Button pressed: {btn}" in resp or f"pressed: {btn}" in resp,
+         resp)
 
-# Test 6: Play note La (6)
-resp = send_cmd('6', 0.3)
-test("Play La (6)", 'La' in resp, resp)
+print("\n" + "="*70)
+print("PART 3: DEBOUNCE TEST")
+print("="*70)
 
-# Test 7: Play note Si (7)
-resp = send_cmd('7', 0.3)
-test("Play Si (7)", 'Si' in resp, resp)
+# Test debounce - hold button should only register once
+resp = wait_for_input("Press and HOLD button 1 for 2 seconds", timeout=3)
+count = resp.count("Button pressed:")
+test("Debounce protection (no repeat on hold)",
+     count == 1,
+     f"Expected 1 press, got {count} presses. Response: {resp}")
 
-print("\n--- Testing Octave Changes (+/-) ---")
+print("\n" + "="*70)
+print("PART 4: ANTI-GHOSTING TEST")
+print("="*70)
 
-# Test 8: Increase octave (+)
-resp = send_cmd('+', 0.3)
-test("Increase octave (+)", 'octave 5' in resp and 'Settings' in resp, resp)
+# Test anti-ghosting - press two buttons simultaneously
+resp = wait_for_input("Press TWO buttons SIMULTANEOUSLY (e.g., 1 and 2)", timeout=3)
+test("Anti-ghosting (no detection on multiple press)",
+     "Button pressed:" not in resp or resp.count("Button pressed:") == 0,
+     resp)
 
-# Test 9: Play note in new octave
-resp = send_cmd('1', 0.3)
-test("Play in octave 5", 'octave 5' in resp, resp)
+print("\n" + "="*70)
+print("PART 5: SWITCH TO MUSICAL MODE")
+print("="*70)
 
-# Test 10: Decrease octave (-)
-resp = send_cmd('-', 0.3)
-test("Decrease octave (-)", 'octave 4' in resp, resp)
+# Switch back to musical mode
+resp = wait_for_input("Switch back to MUSICAL mode", is_side_button=True)
+test("Switch to musical mode",
+     "musical" in resp.lower() and "mode" in resp.lower(),
+     resp)
 
-# Test 11: Multiple octave increases
-for _ in range(3):
-    send_cmd('+', 0.2)
-resp = send_cmd('+', 0.3)  # Should now be at octave 8
-test("Increase to octave 8", 'octave 8' in resp, resp)
+print("\n" + "="*70)
+print("PART 6: MUSICAL MODE - NOTE PLAYBACK (Buttons 1-7)")
+print("="*70)
 
-# Test 12: Try to exceed max octave
-resp = send_cmd('+', 0.3)
-test("Cannot exceed octave 8", 'octave 8' in resp, resp)
+notes = ["Do", "Re", "Mi", "Fa", "Sol", "La", "Si"]
+for i, note in enumerate(notes, 1):
+    resp = wait_for_input(f"Press button {i} to play note {note}")
+    test(f"Play note {note} (button {i})",
+         note in resp and "Playing" in resp and "octave" in resp,
+         resp)
 
-# Test 13: Decrease to octave 0
-for _ in range(8):
-    send_cmd('-', 0.2)
-resp = send_cmd('-', 0.3)  # Should now be at octave 0
-test("Decrease to octave 0", 'octave 0' in resp, resp)
+print("\n" + "="*70)
+print("PART 7: MUSICAL MODE - OCTAVE CONTROL (Buttons 8-9)")
+print("="*70)
 
-# Test 14: Try to go below min octave
-resp = send_cmd('-', 0.3)
-test("Cannot go below octave 0", 'octave 0' in resp, resp)
+# Test octave up (button 8)
+resp = wait_for_input("Press button 8 to increase octave")
+test("Increase octave (button 8)",
+     "octave 5" in resp and "Settings" in resp,
+     resp)
+
+# Test octave down (button 9)
+resp = wait_for_input("Press button 9 to decrease octave")
+test("Decrease octave (button 9)",
+     "octave 4" in resp and "Settings" in resp,
+     resp)
+
+# Test max octave
+print("\n>>> Rapidly press button 8 FOUR times to reach octave 8...")
+input("    Press ENTER when ready...")
+ser.reset_input_buffer()
+time.sleep(0.5)
+for _ in range(4):
+    input("    Press button 8 now...")
+    time.sleep(0.3)
+resp = ser.read(ser.in_waiting).decode(errors='ignore')
+test("Reach max octave 8",
+     "octave 8" in resp,
+     resp)
+
+# Try to exceed max
+resp = wait_for_input("Press button 8 again (should stay at octave 8)")
+test("Cannot exceed octave 8",
+     "octave 8" in resp,
+     resp)
 
 # Reset to octave 4
+print("\n>>> Rapidly press button 9 FOUR times to return to octave 4...")
+input("    Press ENTER when ready...")
 for _ in range(4):
-    send_cmd('+', 0.2)
+    input("    Press button 9 now...")
+    time.sleep(0.3)
+time.sleep(0.3)
+ser.reset_input_buffer()
 
-print("\n--- Testing Duration Changes (A/a) ---")
+print("\n" + "="*70)
+print("PART 8: MUSICAL MODE - DURATION CONTROL (Buttons 10-11)")
+print("="*70)
 
-# Test 15: Increase duration (A)
-resp = send_cmd('A', 0.3)
-test("Increase duration (A)", 'duration 1.1' in resp, resp)
+# Test duration up (button 10)
+resp = wait_for_input("Press button 10 to increase duration")
+test("Increase duration (button 10)",
+     "duration 1.1" in resp or "duration 1.2" in resp,
+     resp)
 
-# Test 16: Decrease duration (a)
-resp = send_cmd('a', 0.3)
-test("Decrease duration (a)", 'duration 1.0' in resp, resp)
+# Test duration down (button 11)
+resp = wait_for_input("Press button 11 to decrease duration")
+test("Decrease duration (button 11)",
+     "duration 1.0" in resp or "duration 1.1" in resp,
+     resp)
 
-# Test 17: Increase to max duration
-for _ in range(40):
-    send_cmd('A', 0.1)
-resp = send_cmd('A', 0.3)
-test("Increase to max 5.0s", 'duration 5.0' in resp, resp)
+print("\n" + "="*70)
+print("PART 9: MUSICAL MODE - SCALE PLAYBACK (Button 12)")
+print("="*70)
 
-# Test 18: Try to exceed max duration
-resp = send_cmd('A', 0.3)
-test("Cannot exceed 5.0s", 'duration 5.0' in resp, resp)
+# Test scale playback
+resp = wait_for_input("Press button 12 to play scale", timeout=8)
+test("Play scale (button 12)",
+     "scale" in resp.lower() and "Playing" in resp,
+     resp)
 
-# Test 19: Decrease to min duration
-for _ in range(49):
-    send_cmd('a', 0.1)
-resp = send_cmd('a', 0.3)
-test("Decrease to min 0.1s", 'duration 0.1' in resp, resp)
+print("\n" + "="*70)
+print("PART 10: FINAL INTEGRATION TEST")
+print("="*70)
 
-# Test 20: Try to go below min duration
-resp = send_cmd('a', 0.3)
-test("Cannot go below 0.1s", 'duration 0.1' in resp, resp)
+# Test quick sequence
+print("\n>>> Quick test: Press buttons 1, 2, 3 in sequence...")
+input("    Press ENTER when ready...")
+ser.reset_input_buffer()
+time.sleep(0.1)
+for btn in [1, 2, 3]:
+    input(f"    Press button {btn} now...")
+    time.sleep(0.3)
+time.sleep(0.5)
+resp = ser.read(ser.in_waiting).decode(errors='ignore')
+test("Quick sequence (1-2-3)",
+     "Do" in resp and "Re" in resp and "Mi" in resp,
+     resp)
 
-# Reset duration to 1.0s
-for _ in range(9):
-    send_cmd('A', 0.1)
-
-print("\n--- Testing Scale Playback (Enter) ---")
-
-# Test 21: Play scale
-resp = send_cmd('\n', 1.5)  # Scale takes time to play
-test("Play scale (Enter)", 'scale' in resp.lower() or 'Playing' in resp, resp)
-
-print("\n--- Testing Invalid Characters ---")
-
-# Test 22: Invalid character 0
-resp = send_cmd('0', 0.3)
-test("Invalid char '0'", 'Invalid' in resp and '48' in resp, resp)  # ASCII 48 = '0'
-
-# Test 23: Invalid character 8
-resp = send_cmd('8', 0.3)
-test("Invalid char '8'", 'Invalid' in resp and '56' in resp, resp)  # ASCII 56 = '8'
-
-# Test 24: Invalid character 9
-resp = send_cmd('9', 0.3)
-test("Invalid char '9'", 'Invalid' in resp and '57' in resp, resp)  # ASCII 57 = '9'
-
-# Test 25: Invalid character 'B'
-resp = send_cmd('B', 0.3)
-test("Invalid char 'B'", 'Invalid' in resp and '66' in resp, resp)  # ASCII 66 = 'B'
-
-# Test 26: Invalid character 'b'
-resp = send_cmd('b', 0.3)
-test("Invalid char 'b'", 'Invalid' in resp and '98' in resp, resp)  # ASCII 98 = 'b'
-
-# Test 27: Invalid character 'x'
-resp = send_cmd('x', 0.3)
-test("Invalid char 'x'", 'Invalid' in resp and '120' in resp, resp)  # ASCII 120 = 'x'
-
-print("\n--- Testing Complete Note Sequence ---")
-
-# Test 28: Play a melody sequence
-print("Playing test melody: Do-Re-Mi-Fa-Sol-La-Si...")
-melody = "1234567"
-for note in melody:
-    resp = send_cmd(note, 0.3)
-test("Melody sequence played", True)  # If we got here, it worked
-
-print("\n--- Testing Different Octaves ---")
-
-# Test 29: Play same note in different octaves
-print("Playing Do in octaves 0, 4, 8...")
-for octave in [0, 4, 8]:
-    # Set octave
-    current = 4  # Assume we're at octave 4
-    if octave > current:
-        for _ in range(octave - current):
-            send_cmd('+', 0.1)
-    else:
-        for _ in range(current - octave):
-            send_cmd('-', 0.1)
-    resp = send_cmd('1', 0.3)
-    test(f"Play Do in octave {octave}", f'octave {octave}' in resp, resp)
-
-print("\n" + "="*60)
+print("\n" + "="*70)
 print(f"TEST RESULTS: {passed} passed, {failed} failed")
-print("="*60)
+print("="*70)
 
 ser.close()
 
