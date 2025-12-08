@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "i2c.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
@@ -25,6 +26,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "musical_keyboard.h"
+#include "keyboard_scanner.h"
 #include "uart_driver.h"
 #include <stdio.h>
 #include <string.h>
@@ -33,6 +35,11 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+
+typedef enum {
+    MODE_TEST,
+    MODE_MUSICAL
+} app_mode_t;
 
 /* USER CODE END PTD */
 
@@ -52,6 +59,7 @@
 static UART uart6;
 static uint8_t current_octave = 4;
 static uint16_t note_duration_ms = 1000;
+static app_mode_t current_mode = MODE_MUSICAL;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -73,7 +81,6 @@ static void uart_send_int(int value) {
     uart_send(buffer);
 }
 
-/* Send duration in format X.Xs (e.g., "1.0s") */
 static void uart_send_duration(uint16_t duration_ms) {
     char buffer[16];
     int seconds = duration_ms / 1000;
@@ -82,9 +89,15 @@ static void uart_send_duration(uint16_t duration_ms) {
     uart_send(buffer);
 }
 
-static void process_uart_char(char c) {
-    if (c >= '1' && c <= '7') {
-        uint8_t note = c - '1';
+static void process_test_mode(int btn_index) {
+    uart_send("Button pressed: ");
+    uart_send_int(btn_index);
+    uart_send("\r\n");
+}
+
+static void process_musical_mode(int btn_index) {
+    if (btn_index >= 1 && btn_index <= 7) {
+        uint8_t note = btn_index - 1;
         play_note(note, current_octave, note_duration_ms);
         uart_send("Playing: ");
         uart_send(note_names[note]);
@@ -94,7 +107,7 @@ static void process_uart_char(char c) {
         uart_send_duration(note_duration_ms);
         uart_send("\r\n");
     }
-    else if (c == '+') {
+    else if (btn_index == 8) {
         if (current_octave < MAX_OCTAVE) {
             current_octave++;
         }
@@ -104,7 +117,7 @@ static void process_uart_char(char c) {
         uart_send_duration(note_duration_ms);
         uart_send("\r\n");
     }
-    else if (c == '-') {
+    else if (btn_index == 9) {
         if (current_octave > MIN_OCTAVE) {
             current_octave--;
         }
@@ -114,7 +127,7 @@ static void process_uart_char(char c) {
         uart_send_duration(note_duration_ms);
         uart_send("\r\n");
     }
-    else if (c == 'A') {
+    else if (btn_index == 10) {
         if (note_duration_ms < MAX_DURATION_MS) {
             note_duration_ms += DURATION_STEP_MS;
         }
@@ -124,7 +137,7 @@ static void process_uart_char(char c) {
         uart_send_duration(note_duration_ms);
         uart_send("\r\n");
     }
-    else if (c == 'a') {
+    else if (btn_index == 11) {
         if (note_duration_ms > MIN_DURATION_MS) {
             note_duration_ms -= DURATION_STEP_MS;
         }
@@ -134,7 +147,7 @@ static void process_uart_char(char c) {
         uart_send_duration(note_duration_ms);
         uart_send("\r\n");
     }
-    else if (c == '\r' || c == '\n') {
+    else if (btn_index == 12) {
         play_scale(current_octave, note_duration_ms);
         uart_send("Playing scale: octave ");
         uart_send_int(current_octave);
@@ -142,10 +155,20 @@ static void process_uart_char(char c) {
         uart_send_duration(note_duration_ms);
         uart_send("\r\n");
     }
-    else {
-        uart_send("Invalid character: ");
-        uart_send_int((int)c);
-        uart_send("\r\n");
+}
+
+static void switch_mode(void) {
+    if (current_mode == MODE_TEST) {
+        current_mode = MODE_MUSICAL;
+        uart_send("Mode: Musical keyboard\r\n");
+        uart_send("Button mapping:\r\n");
+        uart_send("  1-7: Notes Do-Si\r\n");
+        uart_send("  8: Octave up, 9: Octave down\r\n");
+        uart_send("  10: Duration up, 11: Duration down\r\n");
+        uart_send("  12: Play scale\r\n");
+    } else {
+        current_mode = MODE_TEST;
+        uart_send("Mode: Keyboard test\r\n");
     }
 }
 
@@ -183,12 +206,23 @@ int main(void)
   MX_TIM6_Init();
   MX_TIM4_Init();
   MX_TIM1_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
   uart_init(&uart6, &huart6);
   musical_keyboard_init();
+  keyboard_scanner_init();
   HAL_TIM_Base_Start_IT(&htim6);
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+
+  uart_send("Lab 4 Variant 1: Musical Keyboard with I2C Matrix Keypad\r\n");
+  uart_send("Mode: Musical keyboard\r\n");
+  uart_send("Press side button to switch modes\r\n");
+  uart_send("\r\nButton mapping:\r\n");
+  uart_send("  1-7: Notes Do-Si\r\n");
+  uart_send("  8: Octave up, 9: Octave down\r\n");
+  uart_send("  10: Duration up, 11: Duration down\r\n");
+  uart_send("  12: Play scale\r\n\r\n");
 
   /* USER CODE END 2 */
 
@@ -198,9 +232,17 @@ int main(void)
   {
       musical_keyboard_update();
 
-      uint8_t c;
-      if (uart_poll_try_get_byte(&uart6, &c)) {
-          process_uart_char(c);
+      if (keyboard_scanner_check_side_button() == BUTTON_PRESSED) {
+          switch_mode();
+      }
+
+      int btn_index = keyboard_scanner_get_button();
+      if (btn_index != -1) {
+          if (current_mode == MODE_TEST) {
+              process_test_mode(btn_index);
+          } else {
+              process_musical_mode(btn_index);
+          }
       }
     /* USER CODE END WHILE */
 
