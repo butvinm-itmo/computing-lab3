@@ -55,7 +55,7 @@
 **Системная тактовая частота:** 120 МГц
 
 - PLL: (25 MHz HSE / 15) * 144 / 2 = 120 MHz
-- APB1: 30 MHz (TIM6: 60 MHz)
+- APB1: 30 MHz
 - APB2: 60 MHz (TIM1: 120 MHz)
 
 **TIM1 (Advanced Timer)** - генерация ШИМ для излучателя звука
@@ -97,13 +97,21 @@ static void set_buzzer_frequency(uint16_t arr_value) {
 - Таймер начинает генерировать меандр с частотой 133333 / 511 ≈ 261 Гц
 - Этот сигнал поступает на излучатель, который вибрирует с частотой 261 Гц, создавая звук
 
-**TIM6 (Basic Timer)** - прерывания для системного времени
+**Отсчет времени:**
 
-- Prescaler: 5999 (60 MHz / 6000 = 10 kHz)
-- Period: 999 (10 kHz / 1000 = 10 Hz → 100 ms)
-- Используется для callback-функций
+Для неблокирующего отсчета длительности нот используется системный таймер **SysTick** через функцию `HAL_GetTick()`:
+- Функция `musical_keyboard_update()` вызывается в главном цикле
+- Сравнивает текущее время с временем начала воспроизведения
+- Останавливает ноту при истечении заданной длительности
 
-- Частота обновления: 10 Гц (каждые 100 мс) достаточна для обработки длительности нот с шагом 0.1 с
+```c
+void musical_keyboard_update(void) {
+    uint32_t current_time = HAL_GetTick();  // SysTick, 1 мс разрешение
+    if (current_time - play_start_time >= play_duration_ms) {
+        stop_note();
+    }
+}
+```
 
 **USART6** - связь с компьютером
 
@@ -155,7 +163,7 @@ flowchart TD
     Init2 --> Init3[Инициализация<br/>GPIO, UART, TIM]
     Init3 --> Init4[uart_init]
     Init4 --> Init5[musical_keyboard_init]
-    Init5 --> Init6[Запуск таймеров<br/>TIM1, TIM6]
+    Init5 --> Init6[Запуск таймера TIM1<br/>для генерации ШИМ]
     Init6 --> Loop[Главный цикл]
 
     Loop --> UpdateKB[musical_keyboard_update]
